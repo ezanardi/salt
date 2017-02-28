@@ -36,9 +36,10 @@ def __validate__(config):
     Validate the beacon configuration
     '''
     # Temporary fix for https://github.com/saltstack/salt/issues/38121
-    tmpconfig = {}
-    map(tmpconfig.update, config)
-    config = tmpconfig
+    if isinstance(config, list):
+        tmpconfig = {}
+        map(tmpconfig.update, config)
+        config = tmpconfig
 
     if not isinstance(config, dict):
         return False, ('Configuration for asterisk_calls beacon '
@@ -69,6 +70,14 @@ def beacon(config):
           channels: [0, 50]
           calls: [0, 25]
 
+    For Nitrogen, beacon configuration must be a list.
+
+    .. code-block:: yaml
+
+        asterisk_calls:
+        - channels: [0, 50]
+        - calls: [0, 25]
+
     '''
     log.trace('asterisk_calls beacon starting')
     ret = []
@@ -78,9 +87,10 @@ def beacon(config):
         return ret
 
     # Temporary fix for https://github.com/saltstack/salt/issues/38121
-    tmpconfig = {}
-    map(tmpconfig.update, config)
-    config = tmpconfig
+    if isinstance(config, list):
+        tmpconfig = {}
+        map(tmpconfig.update, config)
+        config = tmpconfig
 
     if len(config) == 0:    # Nothing to probe
         return ret
