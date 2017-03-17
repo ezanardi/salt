@@ -7,28 +7,25 @@ Beacon to monitor active channels and calls on an Asterisk PBX.
 from __future__ import absolute_import
 import logging
 import re
+import os
 
 # Salt libs
 import salt.utils
 
 log = logging.getLogger(__name__)
 
-__virtualname__ = 'asterisk_calls'
-
-CHANNELS = 'channels'
-CALLS = 'calls'
-PROBES = [CHANNELS, CALLS]
-CHANNELS_PATTERN = re.compile("(\d+) active channels?$")
-CALLS_PATTERN = re.compile("(\d+) active calls?$")
-CALLS_WITH_MAXCALLS_PATTERN = re.compile("(\d+) of (\d+) max active calls?")
+ACTIVE_CHANNELS_KWD = 'channels'
+ACTIVE_CALLS_KWD = 'calls'
+PROBES = [ACTIVE_CHANNELS_KWD, ACTIVE_CALLS_KWD]
+CHANNELS_PATTERN = re.compile(r'(\d+) active channels?$')
+CALLS_PATTERN = re.compile(r'(\d+) active calls?$')
+CALLS_WITH_MAXCALLS_PATTERN = re.compile(r'(\d+) of (\d+) max active calls?')
 
 
 def __virtual__():
-    which_result = salt.utils.which('asterisk')
-    if which_result is None:
-        return False
-    else:
-        return __virtualname__
+    return bool(salt.utils.which('asterisk')) \
+        or (False, 'The asterisk_calls '
+                   'beacon cannot be loaded. Asterisk is not installed.')
 
 
 def __validate__(config):
@@ -82,29 +79,29 @@ def beacon(config):
     log.trace('asterisk_calls beacon starting')
     ret = []
 
-    _validate = __validate__(config)
-    if not _validate[0]:
-        return ret
-
     # Temporary fix for https://github.com/saltstack/salt/issues/38121
     if isinstance(config, list):
         tmpconfig = {}
         map(tmpconfig.update, config)
         config = tmpconfig
 
-    if len(config) == 0:    # Nothing to probe
+    if not config:    # Nothing to probe
         return ret
 
     # Read values from asterisk
-    out = __salt__['cmd.run']('/usr/sbin/asterisk -x "core show channels"')
+    result = __salt__['cmd.run_all']('asterisk -x "core show channels"')
+    if result['retcode'] != 0:
+        # cmd.run_all logs errors unless we have told it not to do so
+        return ret
+    out = result['stdout']
 
-    for line in out.split('\n'):
+    for line in out.split(os.linesep):
         # Is an "active channels" line?
         match = CHANNELS_PATTERN.match(line)
         if match:
-            channels = match.group(1)
-            if CHANNELS in config:  # probe active channels
-                channels_min, channels_max = config[CHANNELS]
+            channels = int(match.group(1))
+            if ACTIVE_CHANNELS_KWD in config:  # probe active channels
+                channels_min, channels_max = config[ACTIVE_CHANNELS_KWD]
                 if not channels_min <= channels <= channels_max:
                     ret.append({
                         'tag': 'active_channels',
@@ -112,13 +109,12 @@ def beacon(config):
                     })
             continue    # Process next line of output
         # Is an "active calls" line? (2 patterns, without and with maxcalls)
-        match = CALLS_PATTERN.match(line)
-        if not match:
-            match = CALLS_WITH_MAXCALLS_PATTERN.match(line)
+        match = CALLS_PATTERN.match(line) or \
+            CALLS_WITH_MAXCALLS_PATTERN.match(line)
         if match:
-            calls = match.group(1)
-            if CALLS in config:  # probe active calls
-                calls_min, calls_max = config[CALLS]
+            calls = int(match.group(1))
+            if ACTIVE_CALLS_KWD in config:  # probe active calls
+                calls_min, calls_max = config[ACTIVE_CALLS_KWD]
                 if not calls_min <= calls <= calls_max:
                     ret.append({
                         'tag': 'active_calls',
